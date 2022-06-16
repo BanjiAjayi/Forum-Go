@@ -7,6 +7,11 @@ import (
 	"net/http"
 )
 
+type Member struct {
+	email    string
+	username string
+}
+
 func home(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
 		http.Error(w, http.StatusText(405), 405)
@@ -31,7 +36,7 @@ func registerUser(w http.ResponseWriter, r *http.Request) {
 	emailQ := dB.QueryRow("SELECT * FROM users WHERE email = $1", email)
 	usernameQ := dB.QueryRow("SELECT * FROM users WHERE username = $2", username)
 
-	f := new(Forum)
+	f := new(Member)
 	errE := emailQ.Scan(&f.email)
 	errU := usernameQ.Scan(&f.username)
 	if errE != sql.ErrNoRows && errU != sql.ErrNoRows {
