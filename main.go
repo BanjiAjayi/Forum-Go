@@ -17,7 +17,7 @@ func main() {
 	// CheckDBIntegrity()
 	fileServer := http.FileServer(http.Dir("./static")) // New code
 	http.Handle("/", fileServer)                        // New code
-	http.HandleFunc("/", homePage)
+	http.HandleFunc("/home", home)
 	http.HandleFunc("/registeruser", registerUser)
 	fmt.Println("Listening on port 3000")
 	err := http.ListenAndServe(":3000", nil)
