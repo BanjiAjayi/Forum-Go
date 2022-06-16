@@ -26,7 +26,6 @@ func Init() {
 	`)
 	if err != nil {
 		log.Fatal(err)
-
 	}
 	stmt.Exec()
 }

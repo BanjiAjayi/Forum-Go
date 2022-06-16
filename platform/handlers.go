@@ -17,7 +17,6 @@ func home(w http.ResponseWriter, r *http.Request) {
 }
 
 func registerUser(w http.ResponseWriter, r *http.Request) {
-
 	if err := r.ParseForm(); err != nil {
 		fmt.Fprintf(w, "ParseForm() err: %v", err)
 		return
@@ -48,7 +47,6 @@ func registerUser(w http.ResponseWriter, r *http.Request) {
 
 	if password == confirmPass {
 		stmt, err := dB.Exec("INSERT INTO users VALUES($1, $2, $3)", email, username, password)
-
 		if err != nil {
 			http.Error(w, http.StatusText(400), 400)
 			log.Fatal(err)
@@ -65,5 +63,4 @@ func registerUser(w http.ResponseWriter, r *http.Request) {
 	} else {
 		fmt.Fprintf(w, "Passwords must match")
 	}
-
 }
