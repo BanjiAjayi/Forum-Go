@@ -42,7 +42,6 @@ func Init() {
 		);
 	)
 	`)
-
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -72,7 +71,6 @@ func Init() {
 // }
 
 func Home(w http.ResponseWriter, r *http.Request) {
-
 	cookie, err := r.Cookie("session")
 	if r.Method != "GET" {
 		http.Error(w, http.StatusText(405), 405)
@@ -128,7 +126,6 @@ func Home(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintln(w, "Logged in as:", LookUpUsername(cookie.Value))
 
 	fmt.Fprintf(w, "This is the Home page\n")
-
 }
 
 func Register(w http.ResponseWriter, r *http.Request) {
@@ -207,7 +204,6 @@ func Register(w http.ResponseWriter, r *http.Request) {
 }
 
 func Login(w http.ResponseWriter, r *http.Request) {
-
 	cookie, err := r.Cookie("session")
 	if err == http.ErrNoCookie {
 		fmt.Println("no cookie")
@@ -232,7 +228,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 			fmt.Println(err)
 		}
 
-		if (CheckActiveSession(username)) == "1" {
+		if (CheckSession(username)) == "1" {
 			tx.Commit()
 			fmt.Fprint(w, "Cannot login, session active elsewhere!")
 
@@ -303,7 +299,6 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		return
 
 	}
-
 }
 
 // if logout, then logout and destroy cookie
@@ -344,7 +339,6 @@ func Logout(w http.ResponseWriter, r *http.Request) {
 			log.Printf("Affected rows %d", rowsAffected)
 			http.Redirect(w, r, "/", http.StatusSeeOther)
 		}
-
 	}
 
 	// http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -401,13 +395,12 @@ func LookUpUsername(uuid string) string {
 	return username.String
 }
 
-func CheckActiveSession(username string) string {
+func CheckSession(username string) string {
 	// dB := Connect()
 
 	var session_switch sql.NullString
 	err := dB.QueryRow("SELECT session_switch FROM users WHERE username=?", username).Scan(&session_switch)
 	if err != nil {
-		fmt.Println("518")
 		log.Fatal()
 	}
 	return session_switch.String
@@ -458,5 +451,5 @@ func main() {
 		panic(err)
 	}
 
-	println("Running code after ListenAndServe (only happens when server shuts down)")
+	fmt.Println("Running code after ListenAndServe (only happens when server shuts down)")
 }
