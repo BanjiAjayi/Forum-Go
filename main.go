@@ -45,7 +45,11 @@ func Init() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	stmt.Exec()
+	stmt, err = dB.Prepare(`INSERT INTO users (email, username, password, uuid, session_switch) values (?,?,?,?,?)`)
+	if err != nil {
+		log.Fatal(err)
+	}
+	stmt.Exec("test@test.com", "test", hashAndSalt("test"), "0", "0")
 }
 
 // //create table if it does not exist with 'name' and 'type'
@@ -90,7 +94,6 @@ func Home(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := tx.Query("SELECT username, uuid FROM users LIMIT $1", 999)
 	if err != nil {
-		fmt.Println("107")
 		http.Error(w, http.StatusText(500), 500)
 		log.Fatal(err)
 		return
@@ -106,7 +109,6 @@ func Home(w http.ResponseWriter, r *http.Request) {
 		err = rows.Scan(&u.username, &uuid)
 
 		if err != nil {
-			fmt.Println("121")
 			http.Error(w, http.StatusText(500), 500)
 			log.Fatal(err)
 			return
@@ -116,7 +118,6 @@ func Home(w http.ResponseWriter, r *http.Request) {
 		// get any error encountered during iteration
 		err = rows.Err()
 		if err != nil {
-			fmt.Println("131")
 			http.Error(w, http.StatusText(500), 500)
 			log.Fatal(err)
 			return
@@ -154,8 +155,6 @@ func Register(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		fmt.Println(email, username, password, confirmPass)
-
 		tx, err := dB.Begin()
 		if err != nil {
 			log.Fatal(err)
@@ -180,7 +179,6 @@ func Register(w http.ResponseWriter, r *http.Request) {
 		// adds email, username and hashed password into database
 		stmt, err := tx.Exec("INSERT INTO users VALUES($1, $2, $3, $4, $5)", email, username, hashAndSalt(password), 0, 0)
 		if err != nil {
-			fmt.Println("229")
 			tx.Rollback()
 			http.Error(w, http.StatusText(400), 400)
 			log.Fatal(err)
@@ -190,7 +188,6 @@ func Register(w http.ResponseWriter, r *http.Request) {
 
 		rowsAffected, err := stmt.RowsAffected()
 		if err != nil {
-			fmt.Println("238")
 			tx.Rollback()
 			http.Error(w, http.StatusText(500), 500)
 			log.Fatal(err)
@@ -204,6 +201,7 @@ func Register(w http.ResponseWriter, r *http.Request) {
 }
 
 func Login(w http.ResponseWriter, r *http.Request) {
+	u := User{}
 	cookie, err := r.Cookie("session")
 	if err == http.ErrNoCookie {
 		fmt.Println("no cookie")
@@ -224,7 +222,6 @@ func Login(w http.ResponseWriter, r *http.Request) {
 
 		tx, err := dB.Begin()
 		if err != nil {
-			fmt.Println("292")
 			fmt.Println(err)
 		}
 
@@ -238,7 +235,6 @@ func Login(w http.ResponseWriter, r *http.Request) {
 
 		rows, err := tx.Query("SELECT username, password FROM users LIMIT $1", 999)
 		if err != nil {
-			fmt.Println("205")
 			http.Error(w, http.StatusText(500), 500)
 			log.Fatal(err)
 			return
@@ -246,18 +242,14 @@ func Login(w http.ResponseWriter, r *http.Request) {
 
 		defer rows.Close()
 
-		u := User{}
-
 		for rows.Next() {
 
 			err = rows.Scan(&u.username, &u.password)
 			if err != nil {
-				fmt.Println("217")
 				http.Error(w, http.StatusText(500), 500)
 				log.Fatal(err)
 				return
 			}
-			fmt.Println(u.username, u.password)
 
 			// get any error encountered during iteration
 			err = rows.Err()
@@ -278,12 +270,10 @@ func Login(w http.ResponseWriter, r *http.Request) {
 
 				stmt, err := tx.Prepare("UPDATE users set uuid = ?, session_switch = ? WHERE username = ?")
 				if err != nil {
-					fmt.Println("372")
 					log.Fatal(err)
 				}
 				res, err := stmt.Exec(u.uuid, 1, username)
 				if err != nil {
-					fmt.Println("377")
 					log.Fatal(err)
 				}
 				rowsAffected, _ := res.RowsAffected()
@@ -307,6 +297,7 @@ func Logout(w http.ResponseWriter, r *http.Request) {
 	if cookie == nil {
 		fmt.Println("User is not even logged in, redirect to homepage")
 		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
 	}
 	Cookie := cookie.Value
 
@@ -320,18 +311,15 @@ func Logout(w http.ResponseWriter, r *http.Request) {
 			http.SetCookie(w, cookie)
 			tx, err := dB.Begin()
 			if err != nil {
-				fmt.Println("434")
-				fmt.Println(err)
+				log.Fatal(err)
 			}
 			stmt, err := tx.Prepare("UPDATE users set session_switch = ? WHERE uuid = ?")
 			if err != nil {
-				fmt.Println("439")
 				log.Fatal(err)
 			}
 
 			res, err := stmt.Exec("0", Cookie)
 			if err != nil {
-				fmt.Println("445")
 				log.Fatal(err)
 			}
 			rowsAffected, _ := res.RowsAffected()
@@ -389,7 +377,6 @@ func LookUpUsername(uuid string) string {
 	var username sql.NullString
 	err := dB.QueryRow("SELECT username FROM users WHERE uuid=?", uuid).Scan(&username)
 	if err != nil {
-		fmt.Println("506")
 		log.Fatal()
 	}
 	return username.String
