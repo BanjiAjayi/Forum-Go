@@ -17,6 +17,7 @@ type User struct {
 	email    string
 	username string
 	password string
+	uuid     string
 }
 
 var dB *sql.DB
@@ -35,12 +36,13 @@ func Init() {
 	CREATE TABLE IF NOT EXISTS users (
 		email TEXT,
 		username TEXT,
-		password CHAR(60)
-		
+		password CHAR(60),
+		uuid	CHAR(36),
+		session_switch	CHAR(1)	
 		);
-		
-		
+	)
 	`)
+
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -70,12 +72,63 @@ func Init() {
 // }
 
 func Home(w http.ResponseWriter, r *http.Request) {
+
+	cookie, err := r.Cookie("session")
 	if r.Method != "GET" {
 		http.Error(w, http.StatusText(405), 405)
 		return
 	}
+	if err != nil {
+		if err == http.ErrNoCookie {
+			fmt.Fprint(w, "not logged in")
+			return
+		}
+	}
+
+	tx, err := dB.Begin()
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	rows, err := tx.Query("SELECT username, uuid FROM users LIMIT $1", 999)
+	if err != nil {
+		fmt.Println("107")
+		http.Error(w, http.StatusText(500), 500)
+		log.Fatal(err)
+		return
+	}
+
+	defer rows.Close()
+
+	u := User{}
+	var uuid sql.NullString
+
+	for rows.Next() {
+
+		err = rows.Scan(&u.username, &uuid)
+
+		if err != nil {
+			fmt.Println("121")
+			http.Error(w, http.StatusText(500), 500)
+			log.Fatal(err)
+			return
+
+		}
+
+		// get any error encountered during iteration
+		err = rows.Err()
+		if err != nil {
+			fmt.Println("131")
+			http.Error(w, http.StatusText(500), 500)
+			log.Fatal(err)
+			return
+		}
+	}
+
+	fmt.Fprintln(w, "Logged in as:", LookUpUsername(cookie.Value))
 
 	fmt.Fprintf(w, "This is the Home page\n")
+
 }
 
 func Register(w http.ResponseWriter, r *http.Request) {
@@ -83,7 +136,6 @@ func Register(w http.ResponseWriter, r *http.Request) {
 	username := r.FormValue("username")
 	password := r.FormValue("password")
 	confirmPass := r.FormValue("confirmPass")
-
 	if r.Method == "POST" {
 		if err := r.ParseForm(); err != nil {
 			fmt.Fprintf(w, "ParseForm() err: %v", err)
@@ -99,10 +151,20 @@ func Register(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// checks if user input of passwords both match
+		if password != confirmPass {
+			fmt.Fprintf(w, "Passwords must match")
+			return
+		}
+
 		fmt.Println(email, username, password, confirmPass)
 
-		emailQ := dB.QueryRow("SELECT * FROM users WHERE email = $1", email)
-		usernameQ := dB.QueryRow("SELECT * FROM users WHERE username = $2", username)
+		tx, err := dB.Begin()
+		if err != nil {
+			log.Fatal(err)
+		}
+		emailQ := tx.QueryRow("SELECT * FROM users WHERE email = $1", email)
+		usernameQ := tx.QueryRow("SELECT * FROM users WHERE username = $2", username)
 
 		u := new(User)
 		errE := emailQ.Scan(&u.email)
@@ -118,39 +180,39 @@ func Register(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// checks if user input of passwords both match
-		if password == confirmPass {
-			// adds email, username and hashed password into database
-			stmt, err := dB.Exec("INSERT INTO users VALUES($1, $2, $3)", email, username, hashAndSalt(password))
-			if err != nil {
-				http.Error(w, http.StatusText(400), 400)
-				log.Fatal(err)
-				return
+		// adds email, username and hashed password into database
+		stmt, err := tx.Exec("INSERT INTO users VALUES($1, $2, $3, $4, $5)", email, username, hashAndSalt(password), 0, 0)
+		if err != nil {
+			fmt.Println("229")
+			tx.Rollback()
+			http.Error(w, http.StatusText(400), 400)
+			log.Fatal(err)
+			return
 
-			}
-			rowsAffected, err := stmt.RowsAffected()
-			if err != nil {
-				http.Error(w, http.StatusText(500), 500)
-				log.Fatal(err)
-				return
-
-			}
-			fmt.Fprintf(w, "User %s created successfully (%d row affected)\n", username, rowsAffected)
-
-		} else {
-			fmt.Fprintf(w, "Passwords must match")
 		}
+
+		rowsAffected, err := stmt.RowsAffected()
+		if err != nil {
+			fmt.Println("238")
+			tx.Rollback()
+			http.Error(w, http.StatusText(500), 500)
+			log.Fatal(err)
+			return
+
+		}
+		fmt.Fprintf(w, "User %s created successfully (%d row affected)\n", username, rowsAffected)
+
+		tx.Commit()
 	}
 }
 
 func Login(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie("logged-in")
+
+	cookie, err := r.Cookie("session")
 	if err == http.ErrNoCookie {
-		cookie = &http.Cookie{
-			Name:  "logged-in",
-			Value: "0",
-		}
+		fmt.Println("no cookie")
 	}
+
 	if r.Method == "POST" {
 
 		if err := r.ParseForm(); err != nil {
@@ -164,20 +226,37 @@ func Login(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		rows, err := dB.Query("SELECT username, password FROM users LIMIT $1", 3)
+		tx, err := dB.Begin()
 		if err != nil {
+			fmt.Println("292")
+			fmt.Println(err)
+		}
+
+		if (CheckActiveSession(username)) == "1" {
+			tx.Commit()
+			fmt.Fprint(w, "Cannot login, session active elsewhere!")
+
+			// http.Redirect(w, r, r.Header.Get("Referer"), 302)
+			return
+		}
+
+		rows, err := tx.Query("SELECT username, password FROM users LIMIT $1", 999)
+		if err != nil {
+			fmt.Println("205")
 			http.Error(w, http.StatusText(500), 500)
 			log.Fatal(err)
 			return
 		}
+
 		defer rows.Close()
 
-		u := new(User)
+		u := User{}
 
 		for rows.Next() {
 
 			err = rows.Scan(&u.username, &u.password)
 			if err != nil {
+				fmt.Println("217")
 				http.Error(w, http.StatusText(500), 500)
 				log.Fatal(err)
 				return
@@ -195,15 +274,27 @@ func Login(w http.ResponseWriter, r *http.Request) {
 			// checks if username matches input and compares hash password with input password
 			if u.username == username && (comparePasswords(u.password, (password))) == true {
 
+				u.uuid = genUUID()
 				cookie = &http.Cookie{
-					Name:  "logged-in",
-					Value: genUUID(),
+					Name:  "session",
+					Value: u.uuid,
 				}
+
+				stmt, err := tx.Prepare("UPDATE users set uuid = ?, session_switch = ? WHERE username = ?")
+				if err != nil {
+					fmt.Println("372")
+					log.Fatal(err)
+				}
+				res, err := stmt.Exec(u.uuid, 1, username)
+				if err != nil {
+					fmt.Println("377")
+					log.Fatal(err)
+				}
+				rowsAffected, _ := res.RowsAffected()
+				fmt.Println(w, "User %s created successfully (%d row affected)\n", u.uuid, rowsAffected)
+				tx.Commit()
 				http.SetCookie(w, cookie)
 				http.Redirect(w, r, "/", http.StatusSeeOther)
-				// http.Redirect(w, r, r.Header.Get("Referer"), 302)//redirects to previous page
-
-				return
 			}
 
 		}
@@ -212,24 +303,51 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		return
 
 	}
+
 }
 
 // if logout, then logout and destroy cookie
 func Logout(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie("logged-in")
+	cookie, err := r.Cookie("session")
+	if cookie == nil {
+		fmt.Println("User is not even logged in, redirect to homepage")
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+	}
+	Cookie := cookie.Value
+
 	if err != http.ErrNoCookie { // check for cookie otherwise logout is redundant(redirect to homepage)
 		if r.URL.Path == "/logout" {
 			cookie = &http.Cookie{
-				Name:   "logged-in",
+				Name:   "session",
 				Value:  "0",
 				MaxAge: -1, // destroys cookie if browser does not delete cookies for any reason
 			}
 			http.SetCookie(w, cookie)
+			tx, err := dB.Begin()
+			if err != nil {
+				fmt.Println("434")
+				fmt.Println(err)
+			}
+			stmt, err := tx.Prepare("UPDATE users set session_switch = ? WHERE uuid = ?")
+			if err != nil {
+				fmt.Println("439")
+				log.Fatal(err)
+			}
+
+			res, err := stmt.Exec("0", Cookie)
+			if err != nil {
+				fmt.Println("445")
+				log.Fatal(err)
+			}
+			rowsAffected, _ := res.RowsAffected()
+			tx.Commit()
+			log.Printf("Affected rows %d", rowsAffected)
 			http.Redirect(w, r, "/", http.StatusSeeOther)
 		}
+
 	}
-	fmt.Println("User is not even logged in, redirect to homepage")
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+
+	// http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func isEmailValid(email string) bool {
@@ -267,6 +385,34 @@ func comparePasswords(hashedPassword string, plainPassword string) bool {
 	return true
 }
 
+func CloseDB() error {
+	return dB.Close()
+}
+
+func LookUpUsername(uuid string) string {
+	// dB := Connect()
+	defer dB.Close()
+	var username sql.NullString
+	err := dB.QueryRow("SELECT username FROM users WHERE uuid=?", uuid).Scan(&username)
+	if err != nil {
+		fmt.Println("506")
+		log.Fatal()
+	}
+	return username.String
+}
+
+func CheckActiveSession(username string) string {
+	// dB := Connect()
+
+	var session_switch sql.NullString
+	err := dB.QueryRow("SELECT session_switch FROM users WHERE username=?", username).Scan(&session_switch)
+	if err != nil {
+		fmt.Println("518")
+		log.Fatal()
+	}
+	return session_switch.String
+}
+
 type Cookie struct {
 	Name       string
 	Value      string
@@ -299,13 +445,13 @@ func genUUID() string {
 func main() {
 	Init()
 	// CheckDBIntegrity()
-
+	// dB.SetMaxOpenConns(1)
 	fileServer := http.FileServer(http.Dir("./static")) // New code
 	http.Handle("/", fileServer)                        // New code
 	http.HandleFunc("/register", Register)
 	http.HandleFunc("/login", Login)
 	http.HandleFunc("/logout", Logout)
-
+	http.HandleFunc("/home", Home)
 	fmt.Println("Listening on port 3000")
 	err := http.ListenAndServe(":3000", nil)
 	if err != nil {
