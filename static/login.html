@@ -1,32 +1,36 @@
-<html>
-  <head>
-    <title>Login Page</title>
-  </head>
-  <body>
-    <h2>Login Page</h2>
-    <label for="txt">Please login to interact with posts:</label>
-<br>
-<form method="POST" action="/login">   
-
-<br>
-
-<html>
+<!DOCTYPE html>
+<html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="mystyle.css">
+  <title>Login Page</title>
 </head>
 <body>
-<div>
+  <div class="topnav" id="myTopnav">
+    <a href="#home" class="active">Home</a>
+    <a href="#news">News</a>
+    <a href="#Login">Login</a>
+    <a href="#regestaier">reister</a>
+    <a href="javascript:void(0);" class="icon" onclick="myFunction()">
+      <i class="fa fa-bars"></i>
+    </a>
+  </div>
+  <h2>Login Page</h2>
+  <label for="txt">Please login to interact with posts:</label>
+  <br>
+  <form id="login" action="#" method="GET">
   
-     
-      
-      <br>
-      <div>Username:      <input type = "text" name ="username" placeholder="" id="input" cols="10" rows="1"></textarea></div>
-      <br>
-      <div>Password:     <input type = "password" name ="password" placeholder="password" id="input" cols="10" rows="1"></textarea></div>
-      <br>
-     
-      <input type="submit" value="submit" /></p>
-  </form>
-</div>
-  </body>
+    <label for="user">User name</label>
+    <input id="user" name="user" type="text" required>
+  </div>
+  <br>
+  <div>
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password">
+  </div>
+  <button type="submit">Submit</button>
+</form>
+</body>
 </html>
