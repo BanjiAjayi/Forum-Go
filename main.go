@@ -7,6 +7,9 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"text/template"
+
+	// "text/template"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -14,10 +17,32 @@ import (
 )
 
 type User struct {
-	email    string
-	username string
-	password string
-	uuid     string
+	User_ID  int    `dB:"user_id"`
+	Email    string `dB:"email"`
+	Username string
+	Password string
+	UUID     string
+}
+
+type Thread struct {
+	Thread_ID  int `dB:"thread_id"`
+	User_ID    sql.NullString
+	Title      string `dB:"title"`
+	Body       string
+	Category   string
+	Likes      int
+	Img        string
+	Created_At string
+}
+
+type Posts struct {
+	Post_ID   int
+	Thread_ID Thread
+	User_ID   User
+	Comment   string
+	Likes     int
+	Img       string
+	CreatedAt string
 }
 
 var dB *sql.DB
@@ -26,30 +51,92 @@ func Init() {
 	var err error
 	dB, err = sql.Open("sqlite3", "sqlite-database.DB")
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(err, "Unable to open database")
 	}
 
 	if err = dB.Ping(); err != nil {
-		log.Fatal(err)
+		log.Fatal(err, "Unable to ping database")
 	}
-	stmt, err := dB.Prepare(`
+
+	const FK = `
+	PRAGMA foreign_keys = ON;`
+
+	_, err = dB.Exec(FK)
+	if err != nil {
+		log.Fatal(err, "Unable to set pragmas")
+	}
+
+	stmtUT, err := dB.Prepare(`
 	CREATE TABLE IF NOT EXISTS users (
-		email TEXT,
-		username TEXT,
+		user_id	INTEGER PRIMARY KEY AUTOINCREMENT,
+		email TEXT UNIQUE,
+		username TEXT UNIQUE,
 		password CHAR(60),
 		uuid	CHAR(36),
-		session_switch	CHAR(1)	
+		session_switch	CHAR(1)
 		);
 	)
 	`)
 	if err != nil {
+		fmt.Println("50")
 		log.Fatal(err)
 	}
-	stmt, err = dB.Prepare(`INSERT INTO users (email, username, password, uuid, session_switch) values (?,?,?,?,?)`)
+	stmtUT.Exec()
+
+	stmtTT, err := dB.Prepare(`
+		CREATE TABLE IF NOT EXISTS threads (
+		thread_id INTEGER PRIMARY KEY AUTOINCREMENT,
+		user_id INTEGER REFERENCES users(user_id),
+		category TXT,
+		title VARCHAR(255),
+		body TEXT,
+		likes INT,
+		img BLOB,
+		created_at DATATIME
+		);
+	)
+	`)
+	if err != nil {
+		fmt.Println("69")
+		log.Fatal(err)
+	}
+	stmtTT.Exec()
+
+	stmtPT, err := dB.Prepare(`
+		CREATE TABLE IF NOT EXISTS posts (
+		post_id INTEGER PRIMARY KEY AUTOINCREMENT,
+		thread_id INTEGER REFERENCES threads(thread_id),
+		user_id INTEGER REFERENCES users(user_id),
+		comment TEXT,
+		likes INT,
+		img BLOB,
+		created_at DATATIME
+		);
+	)
+	`)
+	if err != nil {
+		fmt.Println("87")
+		log.Fatal(err)
+	}
+	stmtPT.Exec()
+
+	stmtFUT, err := dB.Prepare(`INSERT INTO users (email, username, password) values (?,?,?)`)
 	if err != nil {
 		log.Fatal(err)
 	}
-	stmt.Exec("test@test.com", "test", hashAndSalt("test"), "0", "0")
+	stmtFUT.Exec("test@test.com", "test", hashAndSalt("test"))
+
+	stmtFTT, err := dB.Prepare(`INSERT INTO threads (category, title, body, likes, img, created_at) values (?,?,?,?,?,?)`)
+	if err != nil {
+		log.Fatal(err)
+	}
+	stmtFTT.Exec("testification", "test", "testing", 0, "img", TimeDate())
+
+	stmtFPT, err := dB.Prepare(`INSERT INTO posts (comment, likes, img, created_at) values (?,?,?,?)`)
+	if err != nil {
+		log.Fatal(err)
+	}
+	stmtFPT.Exec("testify", 0, "img", TimeDate())
 }
 
 // //create table if it does not exist with 'name' and 'type'
@@ -75,7 +162,18 @@ func Init() {
 // }
 
 func Home(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie("session")
+	// var templateDataMap = make(map[string]interface{})
+	tmpl, err := template.ParseFiles("./static/thread.html")
+	if err != nil {
+		fmt.Println("169")
+		panic(err)
+	}
+	// cookie, err := r.Cookie("session")
+	u := User{}
+
+	tt := []Thread{}
+	t := Thread{}
+	var UUID sql.NullString
 	if r.Method != "GET" {
 		http.Error(w, http.StatusText(405), 405)
 		return
@@ -92,7 +190,7 @@ func Home(w http.ResponseWriter, r *http.Request) {
 		fmt.Println(err)
 	}
 
-	rows, err := tx.Query("SELECT username, uuid FROM users LIMIT $1", 999)
+	rows, err := tx.Query("SELECT username, uuid FROM users LIMIT $2", 999)
 	if err != nil {
 		http.Error(w, http.StatusText(500), 500)
 		log.Fatal(err)
@@ -101,12 +199,9 @@ func Home(w http.ResponseWriter, r *http.Request) {
 
 	defer rows.Close()
 
-	u := User{}
-	var uuid sql.NullString
-
 	for rows.Next() {
 
-		err = rows.Scan(&u.username, &uuid)
+		err = rows.Scan(&u.Username, &UUID)
 
 		if err != nil {
 			http.Error(w, http.StatusText(500), 500)
@@ -124,9 +219,37 @@ func Home(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	fmt.Fprintln(w, "Logged in as:", LookUpUsername(cookie.Value))
+	test, err := tx.Query("SELECT * FROM threads")
+	if err != nil {
+		fmt.Println("196")
+		http.Error(w, http.StatusText(500), 500)
+		log.Fatal(err)
+		return
+	}
 
-	fmt.Fprintf(w, "This is the Home page\n")
+	defer test.Close()
+	for test.Next() {
+
+		err = test.Scan(&t.Thread_ID, &t.User_ID, &t.Title, &t.Body, &t.Category, &t.Likes, &t.Img, &t.Created_At)
+		if err != nil {
+			fmt.Println("250")
+			http.Error(w, http.StatusText(500), 500)
+			log.Fatal(err)
+			return
+		}
+		tt = append(tt, t)
+
+		// get any error encountered during iteration
+		err = rows.Err()
+		if err != nil {
+			fmt.Println("258")
+			http.Error(w, http.StatusText(500), 500)
+			log.Fatal(err)
+			return
+		}
+
+	}
+	tmpl.Execute(w, tt)
 }
 
 func Register(w http.ResponseWriter, r *http.Request) {
@@ -159,12 +282,12 @@ func Register(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			log.Fatal(err)
 		}
-		emailQ := tx.QueryRow("SELECT * FROM users WHERE email = $1", email)
-		usernameQ := tx.QueryRow("SELECT * FROM users WHERE username = $2", username)
+		emailQ := tx.QueryRow("SELECT * FROM users WHERE email = $2", email)
+		usernameQ := tx.QueryRow("SELECT * FROM users WHERE username = $3", username)
 
 		u := new(User)
-		errE := emailQ.Scan(&u.email)
-		errU := usernameQ.Scan(&u.username)
+		errE := emailQ.Scan(&u.Email)
+		errU := usernameQ.Scan(&u.Username)
 		if errE != sql.ErrNoRows && errU != sql.ErrNoRows {
 			fmt.Fprintln(w, "Email & Username already exists!")
 			return
@@ -177,27 +300,22 @@ func Register(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// adds email, username and hashed password into database
-		stmt, err := tx.Exec("INSERT INTO users VALUES($1, $2, $3, $4, $5)", email, username, hashAndSalt(password), 0, 0)
+		stmt, err := tx.Prepare(`INSERT INTO users (user_id, email, username, password, uuid, session_switch) values (?,?,?,?,?,?)`)
 		if err != nil {
-			tx.Rollback()
-			http.Error(w, http.StatusText(400), 400)
+			http.Error(w, http.StatusText(500), 500)
 			log.Fatal(err)
-			return
-
 		}
-
-		rowsAffected, err := stmt.RowsAffected()
+		res, err := stmt.Exec(0, email, username, hashAndSalt(password), 0, 0)
 		if err != nil {
 			tx.Rollback()
 			http.Error(w, http.StatusText(500), 500)
 			log.Fatal(err)
-			return
-
 		}
-		fmt.Fprintf(w, "User %s created successfully (%d row affected)\n", username, rowsAffected)
-
+		fmt.Println(res)
+		fmt.Println(stmt)
 		tx.Commit()
 	}
+	fmt.Fprint(w, "registered")
 }
 
 func Login(w http.ResponseWriter, r *http.Request) {
@@ -222,6 +340,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 
 		tx, err := dB.Begin()
 		if err != nil {
+			fmt.Println("225")
 			fmt.Println(err)
 		}
 
@@ -233,8 +352,9 @@ func Login(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		rows, err := tx.Query("SELECT username, password FROM users LIMIT $1", 999)
+		rows, err := tx.Query("SELECT username, password FROM users LIMIT $2", 999)
 		if err != nil {
+			fmt.Println("239")
 			http.Error(w, http.StatusText(500), 500)
 			log.Fatal(err)
 			return
@@ -244,8 +364,9 @@ func Login(w http.ResponseWriter, r *http.Request) {
 
 		for rows.Next() {
 
-			err = rows.Scan(&u.username, &u.password)
+			err = rows.Scan(&u.Username, &u.Password)
 			if err != nil {
+				fmt.Println("250")
 				http.Error(w, http.StatusText(500), 500)
 				log.Fatal(err)
 				return
@@ -254,30 +375,34 @@ func Login(w http.ResponseWriter, r *http.Request) {
 			// get any error encountered during iteration
 			err = rows.Err()
 			if err != nil {
+				fmt.Println("258")
 				http.Error(w, http.StatusText(500), 500)
 				log.Fatal(err)
 				return
 			}
 
 			// checks if username matches input and compares hash password with input password
-			if u.username == username && (comparePasswords(u.password, (password))) == true {
+			if u.Username == username && (comparePasswords(u.Password, (password))) == true {
 
-				u.uuid = genUUID()
+				u.UUID = genUUID()
 				cookie = &http.Cookie{
-					Name:  "session",
-					Value: u.uuid,
+					Name:   "session",
+					Value:  u.UUID,
+					MaxAge: 999999999999999999,
 				}
 
 				stmt, err := tx.Prepare("UPDATE users set uuid = ?, session_switch = ? WHERE username = ?")
 				if err != nil {
 					log.Fatal(err)
 				}
-				res, err := stmt.Exec(u.uuid, 1, username)
+				res, err := stmt.Exec(u.UUID, 1, username)
 				if err != nil {
+					tx.Rollback()
 					log.Fatal(err)
 				}
-				rowsAffected, _ := res.RowsAffected()
-				fmt.Println(w, "User %s created successfully (%d row affected)\n", u.uuid, rowsAffected)
+				// rowsAffected, _ := res.RowsAffected()
+				// fmt.Println(w, "User %s created successfully (%d row affected)\n", u.uuid, rowsAffected)
+				fmt.Println(res)
 				tx.Commit()
 				http.SetCookie(w, cookie)
 				http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -320,6 +445,7 @@ func Logout(w http.ResponseWriter, r *http.Request) {
 
 			res, err := stmt.Exec("0", Cookie)
 			if err != nil {
+				tx.Rollback()
 				log.Fatal(err)
 			}
 			rowsAffected, _ := res.RowsAffected()
@@ -330,6 +456,28 @@ func Logout(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func CloseDB() error {
+	return dB.Close()
+}
+
+type Cookie struct {
+	Name       string
+	Value      string
+	Path       string
+	Domain     string
+	Expires    time.Time
+	RawExpires string
+
+	// MaxAge=0 means no 'Max-Age' attribute specified.
+	// MaxAge<0 means delete cookie now, equivalently 'Max-Age: 0'
+	// MaxAge>0 means Max-Age attribute present and given in seconds
+	MaxAge   int
+	Secure   bool
+	HttpOnly bool
+	Raw      string
+	Unparsed []string // Raw text of unparsed attribute-value pairs
 }
 
 func isEmailValid(email string) bool {
@@ -367,19 +515,37 @@ func comparePasswords(hashedPassword string, plainPassword string) bool {
 	return true
 }
 
-func CloseDB() error {
-	return dB.Close()
+func genUUID() string {
+	b := make([]byte, 16)
+	_, err := rand.Read(b)
+	if err != nil {
+		log.Fatal(err)
+	}
+	uuid := fmt.Sprintf("%x-%x-%x-%x-%x",
+		b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
+	return uuid
 }
 
 func LookUpUsername(uuid string) string {
 	// dB := Connect()
-	defer dB.Close()
+	// defer dB.Close()
 	var username sql.NullString
 	err := dB.QueryRow("SELECT username FROM users WHERE uuid=?", uuid).Scan(&username)
 	if err != nil {
 		log.Fatal()
 	}
 	return username.String
+}
+
+func LookUpUserID(uuid string) int16 {
+	// dB := Connect()
+	// defer dB.Close()
+	var user_id sql.NullInt16
+	err := dB.QueryRow("SELECT user_id FROM users WHERE uuid=?", uuid).Scan(&user_id)
+	if err != nil {
+		log.Fatal()
+	}
+	return user_id.Int16
 }
 
 func CheckSession(username string) string {
@@ -393,50 +559,100 @@ func CheckSession(username string) string {
 	return session_switch.String
 }
 
-type Cookie struct {
-	Name       string
-	Value      string
-	Path       string
-	Domain     string
-	Expires    time.Time
-	RawExpires string
-
-	// MaxAge=0 means no 'Max-Age' attribute specified.
-	// MaxAge<0 means delete cookie now, equivalently 'Max-Age: 0'
-	// MaxAge>0 means Max-Age attribute present and given in seconds
-	MaxAge   int
-	Secure   bool
-	HttpOnly bool
-	Raw      string
-	Unparsed []string // Raw text of unparsed attribute-value pairs
+func TimeDate() string {
+	t := time.Now()
+	return t.Format("2006-01-02 15:04:05")
 }
 
-func genUUID() string {
-	b := make([]byte, 16)
-	_, err := rand.Read(b)
+// Get a single user given the UUID
+func UserByUUID(uuid string) (u User) {
+	var username string
+	err := dB.QueryRow("SELECT username FROM users WHERE uuid=?", uuid).Scan(&u.User_ID, &u.Email, &u.Username, &u.Email, &u.Password)
+	fmt.Println(username)
+	if err != nil {
+		fmt.Println("630")
+		log.Fatal()
+	}
+	return
+}
+
+func NewThread(w http.ResponseWriter, r *http.Request) {
+	// get cookie
+	cookie, err := r.Cookie("session")
+	u := User{}
+
+	// var UUID sql.NullString
+	if r.Method != "POST" {
+		http.Error(w, http.StatusText(405), 405)
+		return
+	}
+
+	if err != nil {
+		if err == http.ErrNoCookie {
+			fmt.Fprint(w, "not logged in")
+			return
+		}
+	}
+
+	stmtFTT, err := dB.Prepare(`INSERT INTO threads (user_id, category, title, body, likes, img, created_at) values (?,?,?,?,?,?,?)`)
 	if err != nil {
 		log.Fatal(err)
 	}
-	uuid := fmt.Sprintf("%x-%x-%x-%x-%x",
-		b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
-	return uuid
+
+	stmtFTT.Exec(u.FindUserID(cookie.Value), r.FormValue("Category"), r.FormValue("Title"), "testing", 0, "img", TimeDate())
 }
+
+func (u User) FindUserID(uuid string) int {
+	ID := 0
+	rows, err := dB.Query("SELECT user_id FROM users WHERE uuid =?", uuid)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		err = rows.Scan(&u.User_ID)
+		if err != nil {
+			log.Fatal(err)
+		}
+		// get any error encountered during iteration
+		err = rows.Err()
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+	return ID
+}
+
+// func returnUsername(ID int) string {
+
+// }
 
 func main() {
 	Init()
+	mux := http.NewServeMux()
 	// CheckDBIntegrity()
 	// dB.SetMaxOpenConns(1)
 	fileServer := http.FileServer(http.Dir("./static")) // New code
-	http.Handle("/", fileServer)                        // New code
-	http.HandleFunc("/register", Register)
-	http.HandleFunc("/login", Login)
-	http.HandleFunc("/logout", Logout)
-	http.HandleFunc("/home", Home)
+	mux.Handle("/", fileServer)                         // New code
+	mux.HandleFunc("/home", Home)
+	mux.HandleFunc("/register", Register)
+	mux.HandleFunc("/login", Login)
+	mux.HandleFunc("/logout", Logout)
+	mux.HandleFunc("/new/thread", NewThread)
 	fmt.Println("Listening on port 3000")
-	err := http.ListenAndServe(":3000", nil)
-	if err != nil {
-		panic(err)
+	server := &http.Server{
+		Addr:    "localhost:3000",
+		Handler: mux,
 	}
+	server.ListenAndServe()
 
 	fmt.Println("Running code after ListenAndServe (only happens when server shuts down)")
 }
+
+// func noescape(str string) template.HTML {
+// 	return template.HTML(str)
+// }
+
+// var fn = template.FuncMap{
+// 	"noescape": noescape,
+// }
