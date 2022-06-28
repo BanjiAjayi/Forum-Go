@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Home</title>
+    <link rel="stylesheet" href="mystyle.css">
+</head>
+<body>
+    <header>
+        <div class="topnav" id="myTopnav">
+            <a href="#home" class="active">Home</a>
+            <a href="#news">News</a>
+            <a href="#login">Login</a>
+            <a href="#regestaier">reister</a>
+            <a href="javascript:void(0);" class="icon" onclick="myFunction()">
+            <i class="fa fa-bars"></i>
+            </a>
+        </div>
+        <h1> Working Manga & Aniname Site</h1>
+    </header>
+    <main>
+        <form class="post__form">
+            <label for="">Post:</label>
+            <textarea 
+            name="content"
+            id="content" 
+            cols="30" row="10" 
+            maxlength="500" 
+            required
+            ></textarea>
+            <button>Post</button>
+        </form>
+        <div class="post__container">
+            <div class="post">
+                <h3>testuser</h3>
+                <div class="post__content">
+                    <p>
+                        Lorem ipsum dolor sit amet consectetur, adipisicing elit. 
+                        Pariatur, corporis consectetur! Sint, voluptate? Ex sint molestias
+                        commodi officiis perspiciatis iste esse, ipsam voluptates cupiditate
+                        molestiae ipsum dolorem, vel reprehenderit reiciendis.
+                    </p>
+                    <span>20/87/1995</span>
+                </div>
+
+            </div> 
+        </div>
+
+    </main>
+    <script src="index.js"></script>
+</body>
+</html>
