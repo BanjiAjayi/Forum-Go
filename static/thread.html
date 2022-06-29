@@ -1,0 +1,35 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Document</title>
+</head>
+
+<div class="panel panel-default">
+  <div class="panel-heading">
+    <span class="lead"> <i class="fa fa-comment-o"></i> {{ .Category}}</span>
+    <div class="pull-right">
+      Started by {{ .User_ID }} - {{ .Created_At }}
+    </div>
+
+  </div>
+  
+  {{ range . }}
+  <div class="panel-body">
+    <span class="lead"> <i class="fa fa-comment"></i> {{ .Body }}</span>
+    <div class="pull-right">
+      {{ .User_ID }} - {{ .Created_At }}
+    </div>    
+  </div>
+  {{ end }}    
+
+</div>
+
+
+<body>
+  
+</body>
+</html>
