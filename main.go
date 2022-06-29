@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"strings"
 	"text/template"
 
 	// "text/template"
@@ -17,17 +18,18 @@ import (
 )
 
 type User struct {
-	User_ID  int    `dB:"user_id"`
-	Email    string `dB:"email"`
-	Username string
-	Password string
-	UUID     string
+	User_ID        int    
+	Email          string 
+	Username       string
+	Password       string
+	UUID           string
+	session_switch bool
 }
 
 type Thread struct {
-	Thread_ID  int `dB:"thread_id"`
+	Thread_ID  int 
 	User_ID    sql.NullString
-	Title      string `dB:"title"`
+	Title      string 
 	Body       string
 	Category   string
 	Likes      int
@@ -163,7 +165,7 @@ func Init() {
 
 func Home(w http.ResponseWriter, r *http.Request) {
 	// var templateDataMap = make(map[string]interface{})
-	tmpl, err := template.ParseFiles("./static/thread.html")
+	tmpl, err := template.ParseFiles("./templates/home.html")
 	if err != nil {
 		fmt.Println("169")
 		panic(err)
@@ -576,9 +578,18 @@ func UserByUUID(uuid string) (u User) {
 	return
 }
 
+func ThreadByID(id string) (t Thread, err error) {
+	t = Thread{}
+	err = dB.QueryRow("SELECT thread_id, category, user_id, created_at FROM threads WHERE uuid = $1", id).
+		Scan(&t.Thread_ID, &t.Category, &t.User_ID, &t.Created_At)
+	return
+}
+
+
+
 func NewThread(w http.ResponseWriter, r *http.Request) {
 	// get cookie
-	cookie, err := r.Cookie("session")
+
 	u := User{}
 
 	// var UUID sql.NullString
@@ -587,19 +598,27 @@ func NewThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err != nil {
-		if err == http.ErrNoCookie {
-			fmt.Fprint(w, "not logged in")
-			return
-		}
-	}
-
 	stmtFTT, err := dB.Prepare(`INSERT INTO threads (user_id, category, title, body, likes, img, created_at) values (?,?,?,?,?,?,?)`)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	stmtFTT.Exec(u.FindUserID(cookie.Value), r.FormValue("Category"), r.FormValue("Title"), "testing", 0, "img", TimeDate())
+	stmtFTT.Exec(u.FindUserID((CookieChecker(r, w))), r.FormValue("Category"), r.FormValue("Title"), "testing", 0, "img", TimeDate())
+
+}
+
+func NewPost(w http.ResponseWriter, r *http.Request) {
+
+	// var UUID sql.NullString
+	if r.Method != "POST" {
+		http.Error(w, http.StatusText(405), 405)
+		return
+	}
+	stmtFPT, err := dB.Prepare(`INSERT INTO posts (comment, likes, img, created_at) values (?,?,?,?)`)
+	if err != nil {
+		log.Fatal(err)
+	}
+	stmtFPT.Exec("testify", 0, "img", TimeDate())
 }
 
 func (u User) FindUserID(uuid string) int {
@@ -623,6 +642,74 @@ func (u User) FindUserID(uuid string) int {
 	return ID
 }
 
+func postThread(writer http.ResponseWriter, request *http.Request) {
+
+	// body := request.PostFormValue("body")
+	// uuid := request.PostFormValue("uuid")
+	// thread, err := ThreadByID(id)
+	// if err != nil {
+	// 	error_message(writer, request, "Cannot read thread")
+	// }
+	// if _, err := NewPost(thread, body); err != nil {
+	// 	danger(err, "Cannot create post")
+	// }
+
+}
+
+func ViewThread(w http.ResponseWriter, r *http.Request) {
+
+	vals := r.URL.Query()
+	id := vals.Get("id")
+	
+	url := fmt.Sprint("/thread/view?id=", id)
+	http.Redirect(w, r, url, 302)
+	thread, _ := ThreadByID(id)
+	// if err != nil {
+		// if err != nil {
+		// 	fmt.Fprint(w, "cannot read thread")
+		// 	// error_message(w, r, "Cannot read thread")
+		// } else {
+
+		// if err != nil {
+		generateHTML(w, &thread, "layout", "navbar", "thread")
+
+	//}
+
+	
+}
+
+func error_message(writer http.ResponseWriter, request *http.Request, msg string) {
+	url := []string{"/err?msg=", msg}
+	http.Redirect(writer, request, strings.Join(url, ""), 302)
+}
+
+func parseTemplateFiles(filenames ...string) (t *template.Template) {
+	var files []string
+	t = template.New("layout")
+	for _, file := range filenames {
+		files = append(files, fmt.Sprintf("templates/%s.html", file))
+	}
+	t = template.Must(t.ParseFiles(files...))
+	return
+}
+
+func generateHTML(writer http.ResponseWriter, data interface{}, filenames ...string) {
+	var files []string
+	for _, file := range filenames {
+		files = append(files, fmt.Sprintf("templates/%s.html", file))
+	}
+
+	templates := template.Must(template.ParseFiles(files...))
+	templates.ExecuteTemplate(writer, "layout", data)
+}
+
+var logger *log.Logger
+
+func danger(args ...interface{}) {
+	logger.SetPrefix("ERROR ")
+	logger.Println(args...)
+}
+
 // func returnUsername(ID int) string {
 
 // }
@@ -632,13 +719,16 @@ func main() {
 	mux := http.NewServeMux()
 	// CheckDBIntegrity()
 	// dB.SetMaxOpenConns(1)
-	fileServer := http.FileServer(http.Dir("./static")) // New code
-	mux.Handle("/", fileServer)                         // New code
-	mux.HandleFunc("/home", Home)
+	fileServer := http.FileServer(http.Dir("templates")) // New code
+	// mux.Handle("/static/", http.StripPrefix("/static/", fileServer))
+	mux.Handle("/fileserver", fileServer)
+	mux.HandleFunc("/", Home)
 	mux.HandleFunc("/register", Register)
 	mux.HandleFunc("/login", Login)
 	mux.HandleFunc("/logout", Logout)
-	mux.HandleFunc("/new/thread", NewThread)
+	mux.HandleFunc("/thread/view", ViewThread)
+	mux.HandleFunc("/thread/new", NewThread)
+	mux.HandleFunc("/thread/post", NewPost)
 	fmt.Println("Listening on port 3000")
 	server := &http.Server{
 		Addr:    "localhost:3000",
@@ -656,3 +746,23 @@ func main() {
 // var fn = template.FuncMap{
 // 	"noescape": noescape,
 // }
+
+// func CheckSessionHTTP(test func(w http.ResponseWriter, r *http.Request, s *User)) func(w http.ResponseWriter, r *http.Request) {
+
+// 	return func(w http.ResponseWriter, r *http.Request) {
+// 		session := CookieChecker(r, w)
+
+// 		test(w, r, session)
+// 	}
+// }
+
+func CookieChecker(r *http.Request, w http.ResponseWriter) string {
+	cookie, err := r.Cookie("session")
+	if err != nil {
+		if err == http.ErrNoCookie {
+			fmt.Fprint(w, "not logged in")
+
+		}
+	}
+	return cookie.Value
+}
