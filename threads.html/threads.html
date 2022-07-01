@@ -1,0 +1,56 @@
+{{define "thread"}}
+{{end}}
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Document</title>
+</head>
+  {{.}}
+  
+  {{.Title}}
+<div class="panel panel-default">
+  <div class="panel-heading">
+    <span class="lead"> <i class="fa fa-comment-o"></i> {{ .Category}}</span>
+    <div class="pull-right">
+      Started by {{ .User_ID }} - {{ .Created_At }} - {{.Title}}
+    </div>
+    <title>Create New Post</title>
+  </head>
+  <body>
+  <h2>Create New Post</h2>
+  <label for="txt"></label>
+  <br>
+  <form method="POST" action="/thread/post?id={{.Thread_ID}}">   
+   
+  
+   
+  </select>
+    <br>
+    <div>Comment:<input type = "text" name ="Comment" placeholder="Type comment" id="Title" cols="100" rows="10" required></textarea></div>
+    <br>
+   
+    <input type="submit" value="submit" /></p>
+  </div>
+  
+  {{ range . }}
+  <div class="panel-body">
+    <span class="lead"> <i class="fa fa-comment"></i> {{ .Body }}</span>
+    <div class="pull-right">
+      {{ .User_ID }} - {{ .Created_At }}
+    </div>    
+    
+  </div>
+  {{ end }}    
+  
+
+</div>
+
+
+<body>
+  
+</body>
+</html>
