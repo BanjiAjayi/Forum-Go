@@ -19,7 +19,7 @@ import (
 )
 
 type User struct {
-	User_ID        int
+	// User_ID        int
 	Email          string
 	Username       string
 	Password       string
@@ -29,7 +29,7 @@ type User struct {
 
 type Thread struct {
 	Thread_ID  int
-	User_ID    sql.NullString
+	Username   sql.NullString
 	Title      string
 	Body       string
 	Category   string
@@ -39,12 +39,12 @@ type Thread struct {
 }
 
 type Posts struct {
-	Post_ID   int
-	Thread_ID Thread
-	User_ID   User
-	Comment   string
-	Likes     int
-	Img       string
+	Post_ID    int
+	Thread_ID  int
+	Username   string
+	Comment    string
+	Likes      int
+	Img        string
 	Created_At string
 }
 
@@ -68,12 +68,11 @@ func Init() {
 	if err != nil {
 		log.Fatal(err, "Unable to set pragmas")
 	}
-
+	//user_id	INTEGER PRIMARY KEY AUTOINCREMENT,
 	stmtUT, err := dB.Prepare(`
 	CREATE TABLE IF NOT EXISTS users (
-		user_id	INTEGER PRIMARY KEY AUTOINCREMENT,
 		email TEXT UNIQUE,
-		username TEXT UNIQUE,
+		username TEXT PRIMARY KEY,
 		password CHAR(60),
 		uuid	CHAR(36),
 		session_switch	CHAR(1)
@@ -89,7 +88,7 @@ func Init() {
 	stmtTT, err := dB.Prepare(`
 		CREATE TABLE IF NOT EXISTS threads (
 		thread_id INTEGER PRIMARY KEY AUTOINCREMENT,
-		user_id INTEGER REFERENCES users(user_id),
+		username TEXT REFERENCES users(username),
 		category TXT,
 		title VARCHAR(255),
 		body TEXT,
@@ -109,7 +108,7 @@ func Init() {
 		CREATE TABLE IF NOT EXISTS posts (
 		post_id INTEGER PRIMARY KEY AUTOINCREMENT,
 		thread_id INTEGER REFERENCES threads(thread_id),
-		user_id INTEGER REFERENCES users(user_id),
+		username TEXT REFERENCES users(username),
 		comment TEXT,
 		likes INT,
 		img BLOB,
@@ -123,11 +122,44 @@ func Init() {
 	}
 	stmtPT.Exec()
 
-	stmtFUT, err := dB.Prepare(`INSERT INTO users (email, username, password) values (?,?,?)`)
+	stmtLT, err := dB.Prepare(`
+		CREATE TABLE IF NOT EXISTS thread_likes (
+		thread_id INTEGER REFERENCES threads(thread_id),
+		username TEXT REFERENCES users(username),
+		likes INT
+		);
+	)
+	`)
+	if err != nil {
+		fmt.Println("87")
+		log.Fatal(err)
+	}
+	stmtLT.Exec()
+
+	stmtLP, err := dB.Prepare(`
+		CREATE TABLE IF NOT EXISTS post_likes (
+		post_id REFERENCES posts(post_id),
+		username TEXT,
+		likes CHAR(1),
+		FOREIGN KEY(username) REFERENCES users(username),
+		UNIQUE(post_id, username)
+		);
+	)
+	
+	`)
+
+	if err != nil {
+		fmt.Println("87")
+		log.Fatal(err)
+	}
+	stmtLP.Exec()
+
+	//create default user
+	stmtFUT, err := dB.Prepare(`INSERT INTO users (email, username, password, uuid) values (?,?,?,?)`)
 	if err != nil {
 		log.Fatal(err)
 	}
-	stmtFUT.Exec("test@test.com", "test", hashAndSalt("test"))
+	stmtFUT.Exec("test@test.com", "test", hashAndSalt("test"), "de4c4282-ff51-9b99-b3e8-8c84eaf96101")
 
 	stmtFTT, err := dB.Prepare(`INSERT INTO threads (category, title, body, likes, img, created_at) values (?,?,?,?,?,?)`)
 	if err != nil {
@@ -198,7 +230,7 @@ func Home(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	defer rows.Close()
+	// defer rows.Close()
 
 	for rows.Next() {
 
@@ -217,6 +249,11 @@ func Home(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, http.StatusText(500), 500)
 			log.Fatal(err)
 			return
+		} else {
+			err = tx.Commit()
+			if err != nil {
+				log.Fatal(err)
+			}
 		}
 	}
 
@@ -364,7 +401,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 					Value:  u.UUID,
 					MaxAge: 999999999999999999,
 				}
-
+				//update users table{uuid, session} if username matches
 				stmt, err := tx.Prepare("UPDATE users set uuid = ?, session_switch = ? WHERE username = ?")
 				if err != nil {
 					log.Fatal(err)
@@ -511,15 +548,15 @@ func LookUpUsername(uuid string) string {
 	return username.String
 }
 
-func LookUpUserID(uuid string) int16 {
+func LookUpUserID(uuid string) string {
 	// dB := Connect()
 	// defer dB.Close()
-	var user_id sql.NullInt16
-	err := dB.QueryRow("SELECT user_id FROM users WHERE uuid=?", uuid).Scan(&user_id)
+	var username string
+	err := dB.QueryRow("SELECT username FROM users WHERE uuid=?", uuid).Scan(&username)
 	if err != nil {
 		log.Fatal()
 	}
-	return user_id.Int16
+	return username
 }
 
 func CheckSession(username string) string {
@@ -541,7 +578,7 @@ func TimeDate() string {
 // Get a single user given the UUID
 func UserByUUID(uuid string) (u User) {
 	var username string
-	err := dB.QueryRow("SELECT username FROM users WHERE uuid=?", uuid).Scan(&u.User_ID, &u.Email, &u.Username, &u.Email, &u.Password)
+	err := dB.QueryRow("SELECT username FROM users WHERE uuid=?", uuid).Scan(&u.Email, &u.Username, &u.Email, &u.Password)
 	fmt.Println(username)
 	if err != nil {
 		fmt.Println("630")
@@ -552,16 +589,19 @@ func UserByUUID(uuid string) (u User) {
 
 func ThreadByID(id int) (t Thread, err error) {
 	t = Thread{}
-	err = dB.QueryRow("SELECT thread_id, category, user_id, created_at FROM threads WHERE uuid = $1", id).
-		Scan(&t.Thread_ID, &t.Category, &t.User_ID, &t.Created_At)
+	err = dB.QueryRow("SELECT thread_id, category, created_at FROM threads WHERE uuid = $1", id).
+		Scan(&t.Thread_ID, &t.Category, &t.Created_At)
 	return
 }
 
 func CreateThread(w http.ResponseWriter, r *http.Request) {
 	// get cookie
+	// u := User{}
 
-	u := User{}
-
+	if r.Method != "POST" {
+		http.Error(w, http.StatusText(405), 405)
+		return
+	}
 	// // var UUID sql.NullString
 	// if r.Method != "POST" {
 	// 	http.Error(w, http.StatusText(405), 405)
@@ -574,32 +614,35 @@ func CreateThread(w http.ResponseWriter, r *http.Request) {
 	// }
 	// // u := User{}
 	// stmtFTT.Exec(u.FindUserID((CookieChecker(r, w))), r.FormValue("Category"), r.FormValue("Title"), "testing", 0, "img", TimeDate())
+
+	threads, err := dB.Prepare(`INSERT INTO threads (username, category, title, body, likes, img, created_at) values (?,?,?,?,?,?,?)`)
+	if err != nil {
+		fmt.Println("616")
+		http.Error(w, http.StatusText(500), 500)
+		log.Fatal(err)
+	}
 	tx, err := dB.Begin()
 	if err != nil {
 		fmt.Println(err)
 	}
+	fmt.Println()
+	_, err = tx.Stmt(threads).Exec(User{}.FindUsername(CookieChecker(r, w)), r.FormValue("Category"), r.FormValue("Title"), r.FormValue("Body"), 0, "img", TimeDate())
 
-	stmt, err := tx.Prepare(`INSERT INTO threads (user_id, category, title, body, likes, img, created_at) values (?,?,?,?,?,?,?)`)
-	if err != nil {
-		http.Error(w, http.StatusText(500), 500)
-		log.Fatal(err)
-	}
-	fmt.Println(CookieChecker(r,w))
-	res, err := stmt.Exec(u.FindUserID((CookieChecker(r, w))), r.FormValue("Category"), r.FormValue("Title"), r.FormValue("Body"), 0, "img", TimeDate())
-	fmt.Println(u.FindUserID(CookieChecker(r,w)))
-	fmt.Println(r.FormValue("Category"))
 	fmt.Println(r.FormValue("Title"), r.FormValue("Body"), 0, "img", TimeDate())
-	
 
 	if err != nil {
-		tx.Rollback()
+		fmt.Println("doing rollback, 627")
 		http.Error(w, http.StatusText(500), 500)
 		log.Fatal(err)
+
+	} else {
+		err = tx.Commit()
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
-	fmt.Println(res)
-	fmt.Println(stmt)
-	tx.Commit()
-	http.Redirect(w, r, "/home", http.StatusSeeOther)
+
+	// http.Redirect(w, r, "/home", http.StatusSeeOther)
 
 }
 
@@ -607,7 +650,7 @@ func NewPost(w http.ResponseWriter, r *http.Request) {
 	u := User{}
 	// t:= Thread{}
 	// ID, err := strconv.Atoi(r.URL.Query().Get("id"))
-	
+
 	// thread, _ :=(BuildThread(ID))
 	// var UUID sql.NullString
 	if r.Method != "POST" {
@@ -630,58 +673,67 @@ func NewPost(w http.ResponseWriter, r *http.Request) {
 	// tx, err := dB.Begin()
 	// if err != nil {
 	// 	fmt.Println(err)
-	id := r.URL.Query().Get("id")
-	ID, err := strconv.Atoi(id)
-	if err != nil {
-		http.Error(w, http.StatusText(500), 500)
-		log.Fatal(err)
-	}
-	// thread, err := BuildThread(ID)
-	// }
-	tx, err := dB.Begin()
-	if err != nil {
-		fmt.Println(err)
-	}
-	stmt, err := tx.Prepare(`INSERT INTO posts (thread_id, user_id, comment, likes, img, created_at) values (?,?,?,?,?,?)`)
-	if err != nil {
-		http.Error(w, http.StatusText(500), 500)
-		log.Fatal(err)
-	}
-	fmt.Println(CookieChecker(r,w))
-	res, err := stmt.Exec(ID, u.FindUserID((CookieChecker(r, w))), r.FormValue("Comment"), 0, "img", TimeDate())
-	
-	fmt.Println(ID, u.FindUserID((CookieChecker(r, w))), r.FormValue("Comment"), 0, "img", TimeDate())
+	comment := r.FormValue("Comment")
+	if comment != "" {
+		id := r.URL.Query().Get("id")
+		fmt.Println(id)
+		ID, err := strconv.Atoi(id)
+		if err != nil {
+			http.Error(w, http.StatusText(500), 500)
+			log.Fatal(err)
+		}
+		// thread, err := BuildThread(ID)
+		// }
+		posts, err := dB.Prepare(`INSERT INTO posts (thread_id, username, comment, likes, img, created_at) values (?,?,?,?,?,?)`)
+		if err != nil {
+			http.Error(w, http.StatusText(500), 500)
+			fmt.Println("677")
+			log.Fatal(err)
+		}
+		tx, err := dB.Begin()
+		if err != nil {
+			fmt.Println(err)
+		}
+		fmt.Println(CookieChecker(r, w))
+		_, err = tx.Stmt(posts).Exec(ID, u.FindUsername((CookieChecker(r, w))), comment, 0, "img", TimeDate())
+		fmt.Println(u.FindUsername(CookieChecker(r, w)))
+		// fmt.Println(ID, u.FindUsername((CookieChecker(r, w))), r.FormValue("Comment"), 0, "img", TimeDate())
 
-	if err != nil {
-		tx.Rollback()
-		http.Error(w, http.StatusText(500), 500)
-		log.Fatal(err)
+		if err != nil {
+			fmt.Println("doing rollback, 627")
+			http.Error(w, http.StatusText(500), 500)
+			log.Fatal(err)
+			tx.Rollback()
+		} else {
+			err = tx.Commit()
+			if err != nil {
+				fmt.Println("Database is locked?")
+				log.Fatal(err)
+			}
+		}
 	}
-	fmt.Println(res)
-	fmt.Println(stmt)
-	tx.Commit()
-	t, err := template.ParseFiles("templates/posts.html", "templates/threads.html")
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		http.Error(w, err.Error(), 400)
-		http.Error(w, "Bad Request-400", 400)
-		return
-	}
-	posts,_:=BuildPosts(ID)
-	
-	t.ExecuteTemplate(w, "newpost", posts)
+	// t, err := template.ParseFiles("templates/posts.html", "templates/threads.html")
+	// if err != nil {
+	// 	w.WriteHeader(http.StatusInternalServerError)
+	// 	http.Error(w, err.Error(), 400)
+	// 	http.Error(w, "Bad Request-400", 400)
+	// 	return
+	// }
+	// posts,_:=BuildPosts(ID)
+
+	// t.ExecuteTemplate(w, "newpost", posts)
 	// http.Redirect(w, r, "/thread/view?id=" + id, http.StatusSeeOther)
 
 }
 
-func (u User) FindUserID(uuid string) int {
-	rows, err := dB.Query("SELECT user_id FROM users WHERE uuid =?", uuid)
+func (u User) FindUsername(uuid string) string {
+	rows, err := dB.Query("SELECT username FROM users WHERE uuid =?", uuid)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer rows.Close()
+	// defer rows.Close()
 	for rows.Next() {
-		err = rows.Scan(&u.User_ID)
+		err = rows.Scan(&u.Username)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -691,7 +743,7 @@ func (u User) FindUserID(uuid string) int {
 			log.Fatal(err)
 		}
 	}
-	return u.User_ID
+	return u.Username
 }
 
 func BuildThread(id int) (thread []Thread, err error) {
@@ -705,10 +757,11 @@ func BuildThread(id int) (thread []Thread, err error) {
 		return
 	}
 
-	defer test.Close()
+	// defer test.Close()
 	for test.Next() {
 
-		err = test.Scan(&t.Thread_ID, &t.User_ID, &t.Title, &t.Body, &t.Category, &t.Likes, &t.Img, &t.Created_At)
+		err = test.Scan(&t.Thread_ID, &t.Username, &t.Title, &t.Body, &t.Category, &t.Likes, &t.Img, &t.Created_At)
+		//fmt.Println(t.Thread_ID, t.User_ID, t.Title, t.Body, t.Category, t.Likes, t.Img, t.Created_At)
 		if err != nil {
 			fmt.Println("713")
 
@@ -731,40 +784,78 @@ func BuildThread(id int) (thread []Thread, err error) {
 }
 
 func BuildPosts(Thread_ID int) (post []Posts, err error) {
-	pp := []Posts{}
+	PP := []Posts{}
 	p := Posts{}
 
-	test, err := dB.Query("SELECT * FROM posts")
+	// 	var p []Posts
+
+	// for rows.Next() {
+
+	//         err = rows.Scan(&p.Thread_ID, &p.Name)
+	//         if err != nil {
+	//                 log.Fatalf("Scan: %v", err)
+	//         }
+	//         cars = append(cars, car)
+	// }
+	// fmt.Println(cars)
+	// 	test, err := dB.Query("SELECT * FROM posts")
+	// 	if err != nil {
+	// 		fmt.Println("196")
+	// 		log.Fatal(err)
+	// 		return
+	// 	}
+
+	// 	defer test.Close()
+	// 	for test.Next() {
+
+	// 		err = test.Scan(&p.Thread_ID, &p.Post_ID, &p.Comment, &p.User_ID, &p.Likes, &p.Img, &p.Created_At)
+	// 		fmt.Println(p.Thread_ID, p.Post_ID, p.Comment, p.User_ID, p.Likes, p.Img, p.Created_At)
+	// 		//needs fixing - &p.Post_ID driver int64 scan failure
+
+	// 		// if err != nil {
+	// 		// 	fmt.Println("749")
+
+	// 		// 	log.Fatal(err)
+	// 		// 	return
+	// 		// }
+	// 		pp = append(pp, p)
+
+	// 		// get any error encountered during iteration
+	// 		err = test.Err()
+	// 		if err != nil {
+	// 			fmt.Println("258")
+	// 			log.Fatal(err)
+	// 			return
+	// 		}
+
+	// 	}
+	// 	return pp, err
+
+	rows, err := dB.Query("SELECT post_id, comment, likes, img, created_at FROM posts WHERE thread_id =?", Thread_ID)
 	if err != nil {
-		fmt.Println("196")
 		log.Fatal(err)
-		return
 	}
-
-	defer test.Close()
-	for test.Next() {
-
-		err = test.Scan(&p.Thread_ID, &p.Post_ID, &p.Comment, &p.User_ID, &p.Likes, &p.Img, &p.Created_At)
+	// defer rows.Close()
+	for rows.Next() {
+		err = rows.Scan(&p.Post_ID, &p.Comment, &p.Likes, &p.Img, &p.Created_At)
 		if err != nil {
-			fmt.Println("749")
-
+			fmt.Println("823")
 			log.Fatal(err)
-			return
 		}
-		pp = append(pp, p)
-
 		// get any error encountered during iteration
-		err = test.Err()
+		err = rows.Err()
 		if err != nil {
-			fmt.Println("258")
+			fmt.Println("829")
 			log.Fatal(err)
-			return
 		}
-
+		PP = append(PP, p)
 	}
-	return pp, err
+	fmt.Println(PP)
+	fmt.Println(p)
+	return PP, err
 
 }
+
 // func postThread(writer http.ResponseWriter, request *http.Request) {
 
 // 		body := request.PostFormValue("body")
@@ -779,24 +870,38 @@ func BuildPosts(Thread_ID int) (post []Posts, err error) {
 
 // 	}
 // }
-func FindThreadID(id int) int16 {
+func FindThreadID(id int) string {
 	// dB := Connect()
 	// defer dB.Close()
-	var user_id sql.NullInt16
-	err := dB.QueryRow("SELECT user_id FROM users WHERE uuid=?", id).Scan(&user_id)
+	var username string
+	err := dB.QueryRow("SELECT username FROM users WHERE uuid=?", id).Scan(&username)
 	if err != nil {
 		log.Fatal()
 	}
-	return user_id.Int16
+	return username
 }
 func ViewThread(w http.ResponseWriter, r *http.Request) {
 
+	t, err := template.ParseFiles("./templates/threads.html", "./templates/posts.html", "./templates/likes.html")
+	if err != nil {
+		http.Error(w, http.StatusText(500), (500))
+		fmt.Println("789")
+		log.Fatal(err)
+	}
 	ID, err := strconv.Atoi(r.URL.Query().Get("id"))
 	if err != nil {
 		http.Error(w, http.StatusText(500), 500)
 		log.Fatal(err)
 	}
 	thread, err := BuildThread(ID)
+	posts, err := BuildPosts(ID)
+	likes, err := BuildPostsLD(ID)
+	// test := []string{}
+	// for _, data := range likes{
+	// 	test = append(test, data)
+	fmt.Println(likes)
+
+	// }
 	// for i:=range thread{
 	// 	continue
 	// }
@@ -804,8 +909,44 @@ func ViewThread(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(500), 500)
 		log.Fatal(err)
 	}
-	parseTemplateFiles("threads").ExecuteTemplate(w, "threads.html", thread[ID-1])
+	t.ExecuteTemplate(w, "threads.html", thread[ID-1])
+	// fmt.Println(thread[ID-1])
+	// fmt.Println(posts[ID-1])
+	// var Postz Posts
+	// var slice []byte
+	// for _,i := range posts{
+	// 	// fmt.Println(index, i)
+	// 	slice = append(slice,i)
+
+	// }
+	t.ExecuteTemplate(w, "posts.html", posts)
+	// generateHTML(w, thread, "threads", "posts")
 }
+
+// func ViewPosts(w http.ResponseWriter, r *http.Request){
+// 	t, err:= template.ParseFiles("./templates/posts.html"); if err !=nil{
+// 		http.Error(w, http.StatusText(500), (500))
+// 		fmt.Println("789")
+// 		log.Fatal(err)
+// 	}
+// 	ID, err := strconv.Atoi(r.URL.Query().Get("id"))
+// 	if err != nil {
+// 		http.Error(w, http.StatusText(500), 500)
+// 		log.Fatal(err)
+// 	}
+
+// 	posts, err := BuildPosts(ID)
+// 	// for i:=range thread{
+// 	// 	continue
+// 	// }
+// 	if err != nil {
+// 		http.Error(w, http.StatusText(500), 500)
+// 		log.Fatal(err)
+// 	}
+// 	// t.ExecuteTemplate(w, "threads.html", thread[ID-1])
+
+// 	t.ExecuteTemplate(w, "posts.html", posts[ID-1])
+// }
 
 func error_message(writer http.ResponseWriter, request *http.Request, msg string) {
 	url := []string{"/err?msg=", msg}
@@ -839,6 +980,139 @@ func danger(args ...interface{}) {
 	logger.Println(args...)
 }
 
+func ThreadLD(w http.ResponseWriter, r *http.Request) {
+	fmt.Println(User{}.FindUsername(CookieChecker(r, w)))
+	var likes int
+	likez := r.URL.Query().Get("thread/")
+	fmt.Println(likez)
+	if r.URL.Path == "thread/like" {
+		fmt.Println("1")
+		likes = 1
+		fmt.Println(likes)
+	} else if r.URL.Path == "thread/dislike" {
+		likes = 0
+		fmt.Println("0")
+	}
+
+	http.Redirect(w, r, "/", 302)
+}
+
+type LDPosts struct {
+	Post_ID  string
+	Username string
+	Likes    string
+}
+
+func PostLD(w http.ResponseWriter, r *http.Request) {
+	post_id := r.FormValue("id")
+
+	user := User{}.FindUsername(CookieChecker(r, w))
+	ld := LDPosts{}
+	// likez := r.URL.Query().Get("id")
+	LD := ""
+	stmt := ""
+	likes, err := dB.Prepare(`INSERT INTO post_likes (post_id, username, likes) values (?,?,?)`)
+	if r.URL.Path == "/thread/post/like" {
+		LD = "l"
+
+	} else if r.URL.Path == "/thread/post/dislike" {
+		LD = "d"
+
+	}
+	tx, err := dB.Begin()
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	_, err = tx.Stmt(likes).Exec(post_id, user, LD)
+	
+	fmt.Println("sucess?")
+	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE constraint failed: post_likes.post_id, post_likes.username") {
+			rows, _ := tx.Query("SELECT * FROM post_likes")
+			defer rows.Close()
+			for rows.Next() {
+
+				rows.Scan(&ld.Post_ID, &ld.Username, &ld.Likes)
+				fmt.Println(ld.Likes)
+				if ld.Likes == "l" && LD == "l" || ld.Likes == "d" && LD == "d" {
+					stmt = "DELETE FROM post_likes WHERE likes = ? AND post_id = ? AND username = ?"
+					test,_ := tx.Prepare(stmt)
+				_, err := test.Exec(ld.Likes, ld.Post_ID, ld.Username)
+				if err != nil{
+					log.Fatal(err, "1046")
+				}
+				} else if ld.Likes != LD {
+					stmt = "UPDATE post_likes set likes = ? WHERE post_id = ? AND username = ?"
+					test,_ := tx.Prepare(stmt)
+				
+				_, err := test.Exec(LD, ld.Post_ID, ld.Username)
+				if err != nil{
+					log.Fatal(err, "1046")
+				}
+				}
+				
+				
+				// if err != nil {
+				// 	http.Error(w, http.StatusText(500), 500)
+				// 	fmt.Println("677")
+				// 	log.Fatal(err)
+				// }
+
+				// fmt.Println(ID, u.FindUsername((CookieChecker(r, w))), r.FormValue("Comment"), 0, "img", TimeDate())
+
+				// if err != nil {
+
+				// // likes, err = dB.Prepare(stmt)
+				// if err != nil {
+				// 	http.Error(w, http.StatusText(500), 500)
+				// 	log.Fatal(err)
+				// 	tx.Rollback()
+				// }
+				// // _, err = tx.Stmt(likes).Exec(LD, post_id, user)
+				// fmt.Println(LD)
+				// if err != nil {
+				// 	http.Error(w, http.StatusText(500), 500)
+				// 	log.Fatal(err)
+				// 	tx.Rollback()
+
+			}
+
+		}
+	}
+	err = tx.Commit()
+	if err != nil {
+		fmt.Println("Database is locked?")
+		log.Fatal(err)
+	}
+	http.Redirect(w, r, r.Header.Get("Referer"), 302)
+}
+func BuildPostsLD(Post_ID int) (likes []LDPosts, err error) {
+	LD := []LDPosts{}
+	ld := LDPosts{}
+	rows, err := dB.Query("SELECT post_id, likes FROM post_likes")
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(Post_ID)
+	// defer rows.Close()
+	for rows.Next() {
+		err = rows.Scan(&ld.Post_ID, &ld.Likes)
+		if err != nil {
+			fmt.Println("823")
+			log.Fatal(err)
+		}
+		// get any error encountered during iteration
+		err = rows.Err()
+		if err != nil {
+			fmt.Println("829")
+			log.Fatal(err)
+		}
+		LD = append(LD, ld)
+	}
+	return LD, err
+}
+
 // func returnUsername(ID int) string {
 
 // }
@@ -856,8 +1130,14 @@ func main() {
 	mux.HandleFunc("/login", Login)
 	mux.HandleFunc("/logout", Logout)
 	mux.HandleFunc("/thread/view", ViewThread)
+	// mux.HandleFunc("/post/view", ViewPosts)
 	mux.HandleFunc("/thread/create", CreateThread)
 	mux.HandleFunc("/thread/post", NewPost)
+	mux.HandleFunc("/thread/like", ThreadLD)
+	mux.HandleFunc("/thread/dislike", ThreadLD)
+	mux.HandleFunc("/thread/post/like", PostLD)
+	mux.HandleFunc("/thread/post/dislike", PostLD)
+	// mux.HandleFunc("/filter", Filter)
 	fmt.Println("Listening on port 3000")
 	server := &http.Server{
 		Addr:    "localhost:3000",
@@ -889,8 +1169,8 @@ func CookieChecker(r *http.Request, w http.ResponseWriter) string {
 	cookie, err := r.Cookie("session")
 	if err != nil {
 		if err == http.ErrNoCookie {
-			fmt.Fprint(w, "not logged in")
-
+			// fmt.Fprint(w, "not logged in")
+			http.Redirect(w, r, "/login.html", http.StatusSeeOther)
 		}
 	}
 	return cookie.Value
