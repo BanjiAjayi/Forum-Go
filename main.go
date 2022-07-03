@@ -363,7 +363,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		rows, err := tx.Query("SELECT username, password FROM users LIMIT $2", 999)
+		rows, err := tx.Query("SELECT username, password FROM users") //, 999
 		if err != nil {
 			fmt.Println("239")
 			http.Error(w, http.StatusText(500), 500)
@@ -577,11 +577,11 @@ func TimeDate() string {
 
 // Get a single user given the UUID
 func UserByUUID(uuid string) (u User) {
-	var username string
+
 	err := dB.QueryRow("SELECT username FROM users WHERE uuid=?", uuid).Scan(&u.Email, &u.Username, &u.Email, &u.Password)
-	fmt.Println(username)
+
 	if err != nil {
-		fmt.Println("630")
+
 		log.Fatal()
 	}
 	return
@@ -617,7 +617,7 @@ func CreateThread(w http.ResponseWriter, r *http.Request) {
 
 	threads, err := dB.Prepare(`INSERT INTO threads (username, category, title, body, likes, img, created_at) values (?,?,?,?,?,?,?)`)
 	if err != nil {
-		fmt.Println("616")
+
 		http.Error(w, http.StatusText(500), 500)
 		log.Fatal(err)
 	}
@@ -625,13 +625,11 @@ func CreateThread(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		fmt.Println(err)
 	}
-	fmt.Println()
+
 	_, err = tx.Stmt(threads).Exec(User{}.FindUsername(CookieChecker(r, w)), r.FormValue("Category"), r.FormValue("Title"), r.FormValue("Body"), 0, "img", TimeDate())
 
-	fmt.Println(r.FormValue("Title"), r.FormValue("Body"), 0, "img", TimeDate())
-
 	if err != nil {
-		fmt.Println("doing rollback, 627")
+
 		http.Error(w, http.StatusText(500), 500)
 		log.Fatal(err)
 
@@ -676,7 +674,7 @@ func NewPost(w http.ResponseWriter, r *http.Request) {
 	comment := r.FormValue("Comment")
 	if comment != "" {
 		id := r.URL.Query().Get("id")
-		fmt.Println(id)
+
 		ID, err := strconv.Atoi(id)
 		if err != nil {
 			http.Error(w, http.StatusText(500), 500)
@@ -687,27 +685,27 @@ func NewPost(w http.ResponseWriter, r *http.Request) {
 		posts, err := dB.Prepare(`INSERT INTO posts (thread_id, username, comment, likes, img, created_at) values (?,?,?,?,?,?)`)
 		if err != nil {
 			http.Error(w, http.StatusText(500), 500)
-			fmt.Println("677")
+
 			log.Fatal(err)
 		}
 		tx, err := dB.Begin()
 		if err != nil {
 			fmt.Println(err)
 		}
-		fmt.Println(CookieChecker(r, w))
+
 		_, err = tx.Stmt(posts).Exec(ID, u.FindUsername((CookieChecker(r, w))), comment, 0, "img", TimeDate())
-		fmt.Println(u.FindUsername(CookieChecker(r, w)))
+
 		// fmt.Println(ID, u.FindUsername((CookieChecker(r, w))), r.FormValue("Comment"), 0, "img", TimeDate())
 
 		if err != nil {
-			fmt.Println("doing rollback, 627")
+
 			http.Error(w, http.StatusText(500), 500)
 			log.Fatal(err)
 			tx.Rollback()
 		} else {
 			err = tx.Commit()
 			if err != nil {
-				fmt.Println("Database is locked?")
+
 				log.Fatal(err)
 			}
 		}
@@ -752,7 +750,7 @@ func BuildThread(id int) (thread []Thread, err error) {
 
 	test, err := dB.Query("SELECT * FROM threads")
 	if err != nil {
-		fmt.Println("196")
+
 		log.Fatal(err)
 		return
 	}
@@ -763,7 +761,6 @@ func BuildThread(id int) (thread []Thread, err error) {
 		err = test.Scan(&t.Thread_ID, &t.Username, &t.Title, &t.Body, &t.Category, &t.Likes, &t.Img, &t.Created_At)
 		//fmt.Println(t.Thread_ID, t.User_ID, t.Title, t.Body, t.Category, t.Likes, t.Img, t.Created_At)
 		if err != nil {
-			fmt.Println("713")
 
 			log.Fatal(err)
 			return
@@ -773,7 +770,7 @@ func BuildThread(id int) (thread []Thread, err error) {
 		// get any error encountered during iteration
 		err = test.Err()
 		if err != nil {
-			fmt.Println("258")
+
 			log.Fatal(err)
 			return
 		}
@@ -839,19 +836,18 @@ func BuildPosts(Thread_ID int) (post []Posts, err error) {
 	for rows.Next() {
 		err = rows.Scan(&p.Post_ID, &p.Comment, &p.Likes, &p.Img, &p.Created_At)
 		if err != nil {
-			fmt.Println("823")
+
 			log.Fatal(err)
 		}
 		// get any error encountered during iteration
 		err = rows.Err()
 		if err != nil {
-			fmt.Println("829")
+
 			log.Fatal(err)
 		}
 		PP = append(PP, p)
 	}
-	fmt.Println(PP)
-	fmt.Println(p)
+
 	return PP, err
 
 }
@@ -896,9 +892,15 @@ func ViewThread(w http.ResponseWriter, r *http.Request) {
 	thread, err := BuildThread(ID)
 	posts, err := BuildPosts(ID)
 	likes, err := BuildPostsLD(ID)
-	// test := []string{}
-	// for _, data := range likes{
-	// 	test = append(test, data)
+
+	// for _,i:=range likes{
+	// 	if likes == {
+	// 		fmt.Println(i,"yes")
+	// 	}
+	// }
+	// // test := []string{}
+	// // for _, data := range likes{
+	// // 	test = append(test, data)
 	fmt.Println(likes)
 
 	// }
@@ -1005,18 +1007,17 @@ type LDPosts struct {
 
 func PostLD(w http.ResponseWriter, r *http.Request) {
 	post_id := r.FormValue("id")
-
 	user := User{}.FindUsername(CookieChecker(r, w))
-	ld := LDPosts{}
+	db := LDPosts{}
 	// likez := r.URL.Query().Get("id")
-	LD := ""
-	stmt := ""
+	userLikeD := ""
+	s := ""
 	likes, err := dB.Prepare(`INSERT INTO post_likes (post_id, username, likes) values (?,?,?)`)
 	if r.URL.Path == "/thread/post/like" {
-		LD = "l"
+		userLikeD = "l"
 
 	} else if r.URL.Path == "/thread/post/dislike" {
-		LD = "d"
+		userLikeD = "d"
 
 	}
 	tx, err := dB.Begin()
@@ -1024,68 +1025,108 @@ func PostLD(w http.ResponseWriter, r *http.Request) {
 		fmt.Println(err)
 	}
 
-	_, err = tx.Stmt(likes).Exec(post_id, user, LD)
-	
-	fmt.Println("sucess?")
+	_, err = tx.Stmt(likes).Exec(post_id, user, userLikeD)
+
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed: post_likes.post_id, post_likes.username") {
 			rows, _ := tx.Query("SELECT * FROM post_likes")
 			defer rows.Close()
 			for rows.Next() {
 
-				rows.Scan(&ld.Post_ID, &ld.Username, &ld.Likes)
-				fmt.Println(ld.Likes)
-				if ld.Likes == "l" && LD == "l" || ld.Likes == "d" && LD == "d" {
-					stmt = "DELETE FROM post_likes WHERE likes = ? AND post_id = ? AND username = ?"
-					test,_ := tx.Prepare(stmt)
-				_, err := test.Exec(ld.Likes, ld.Post_ID, ld.Username)
-				if err != nil{
-					log.Fatal(err, "1046")
-				}
-				} else if ld.Likes != LD {
-					stmt = "UPDATE post_likes set likes = ? WHERE post_id = ? AND username = ?"
-					test,_ := tx.Prepare(stmt)
-				
-				_, err := test.Exec(LD, ld.Post_ID, ld.Username)
-				if err != nil{
-					log.Fatal(err, "1046")
-				}
-				}
-				
-				
-				// if err != nil {
-				// 	http.Error(w, http.StatusText(500), 500)
-				// 	fmt.Println("677")
-				// 	log.Fatal(err)
-				// }
+				rows.Scan(&db.Post_ID, &db.Username, &db.Likes)
+				//if user like does not match db, update db
+				if db.Likes != userLikeD {
 
-				// fmt.Println(ID, u.FindUsername((CookieChecker(r, w))), r.FormValue("Comment"), 0, "img", TimeDate())
+					s = "UPDATE post_likes set likes = ? WHERE post_id = ? AND username = ?"
+				} else {
 
-				// if err != nil {
+					s = "DELETE FROM post_likes WHERE likes = ? AND post_id = ? AND username = ?"
 
-				// // likes, err = dB.Prepare(stmt)
-				// if err != nil {
-				// 	http.Error(w, http.StatusText(500), 500)
-				// 	log.Fatal(err)
-				// 	tx.Rollback()
-				// }
-				// // _, err = tx.Stmt(likes).Exec(LD, post_id, user)
-				// fmt.Println(LD)
-				// if err != nil {
-				// 	http.Error(w, http.StatusText(500), 500)
-				// 	log.Fatal(err)
-				// 	tx.Rollback()
+				}
 
 			}
+			stmt, err := tx.Prepare(s)
+			if err != nil {
+				log.Fatal(err)
+			}
+			_, err = stmt.Exec(userLikeD, post_id, user)
+			// if err != nil {
+			// 	log.Fatal(err)
+			// }
 
 		}
+
 	}
+
 	err = tx.Commit()
 	if err != nil {
 		fmt.Println("Database is locked?")
 		log.Fatal(err)
 	}
 	http.Redirect(w, r, r.Header.Get("Referer"), 302)
+
+	// // Prepare your query
+	// query, err := dB.Prepare("select count(likes) from post_likes where post_id = ?")
+	// // query, err2 := dB.Prepare("select count(likes) from post_likes where likes = ?")
+	// if err != nil {
+	// 	fmt.Printf("%s", err)
+	// }
+
+	// defer query.Close()
+
+	// // Execute query using 'id' and place value into 'output'
+	// err = query.QueryRow("l").Scan(&post_id)
+	// // err2 = query.QueryRow("d").Scan(&ld.Likes)
+
+	// // Catch errors
+	// switch {
+	// case err == sql.ErrNoRows:
+	// 	fmt.Println("No notebook with that ID.")
+	// case err != nil:
+	// 	fmt.Println("%s", err)
+	// default:
+	// 	fmt.Println("Counted Likes:\n", ld.Post_ID)
+	// }
+
+	// rows, err := tx.Query("SELECT count(likes) FROM users WHERE post_id =?", 83)//, 999
+	// 	if err != nil {
+	// 		fmt.Println("239")
+	// 		http.Error(w, http.StatusText(500), 500)
+	// 		log.Fatal(err)
+	// 		return
+	// 	}
+
+	// 	defer rows.Close()
+
+	// 	for rows.Next() {
+
+	// 		err = rows.Scan(&ld.Likes, &ld.Post_ID)
+	// 		if err != nil {
+	// 			fmt.Println("343")
+	// 			http.Error(w, http.StatusText(500), 500)
+	// 			log.Fatal(err)
+	// 			return
+	// 		}
+
+	// 		// get any error encountered during iteration
+	// 		err = rows.Err()
+	// 		if err != nil {
+	// 			fmt.Println("258")
+	// 			http.Error(w, http.StatusText(500), 500)
+	// 			log.Fatal(err)
+	// 			return
+	// 		}
+	// 		fmt.Println(ld.Likes)
+	// 	}
+
+	// switch {
+	// case err2 == sql.ErrNoRows:
+	// 	fmt.Println("No notebook with that ID.")
+	// case err2 != nil:
+	// 	fmt.Println("%s", err2)
+	// default:
+	// 	fmt.Println("Counted %s notebooks\n", ld.Likes)
+	// }
 }
 func BuildPostsLD(Post_ID int) (likes []LDPosts, err error) {
 	LD := []LDPosts{}
@@ -1094,7 +1135,7 @@ func BuildPostsLD(Post_ID int) (likes []LDPosts, err error) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println(Post_ID)
+
 	// defer rows.Close()
 	for rows.Next() {
 		err = rows.Scan(&ld.Post_ID, &ld.Likes)
@@ -1111,6 +1152,7 @@ func BuildPostsLD(Post_ID int) (likes []LDPosts, err error) {
 		LD = append(LD, ld)
 	}
 	return LD, err
+
 }
 
 // func returnUsername(ID int) string {
