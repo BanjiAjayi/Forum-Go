@@ -7,8 +7,10 @@
 }
 
 
-
-
+.post__form{
+    width: 50%;
+    margin: 0 auto;
+}
 
 /* Add a black background color to the top navigation */
 .topnav {

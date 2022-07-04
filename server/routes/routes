@@ -1,0 +1,28 @@
+package routes
+
+import (
+	"fmt"
+	"net/http"
+)
+
+func main() {
+	Init()
+	mux := http.NewServeMux()
+	// CheckDBIntegrity()
+	// dB.SetMaxOpenConns(1)
+	fileServer := http.FileServer(http.Dir("./static")) // New code
+	mux.Handle("/", fileServer)                         // New code
+	mux.HandleFunc("/home", Home)
+	mux.HandleFunc("/register", Register)
+	mux.HandleFunc("/login", Login)
+	mux.HandleFunc("/logout", Logout)
+	mux.HandleFunc("/new/thread", NewThread)
+	fmt.Println("Listening on port 3000")
+	server := &http.Server{
+		Addr:    "localhost:3000",
+		Handler: mux,
+	}
+	server.ListenAndServe()
+
+	fmt.Println("Running code after ListenAndServe (only happens when server shuts down)")
+}
